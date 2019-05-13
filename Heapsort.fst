@@ -1,5 +1,4 @@
 module Heapsort
-open FStar.Exn
 open FStar.All
 
 type heap =
@@ -58,7 +57,8 @@ let heapVal h =
   | Node m l r -> m
 
 val insertMinHeap : n:nat -> h:heap{is_minHeap h} -> 
-    Tot (o:heap{is_minHeap o /\ (forall m. in_heap m o <==> (in_heap m h \/ m = n))}) (decreases h)
+      Tot (o:heap{is_minHeap o /\ (forall m. in_heap m o <==> (in_heap m h \/ m = n))}) 
+        (decreases h)
 let rec insertMinHeap n h =
   match h with 
   | Leaf -> Node n Leaf Leaf
@@ -66,12 +66,9 @@ let rec insertMinHeap n h =
                     (if m < n then Node m (insertMinHeap n h2) h1 
                     else Node n (insertMinHeap m h2) h1)
 
-(* doesn't work*)
-(**)
-(*val siftDown: n:nat -> l:heap{is_minHeap l /\ ~(in_heap n l)} -> r:heap{is_minHeap r /\ ~(in_heap n r)}  -> 
-    Tot (o:heap{is_minHeap o}) (decreases ((size l)+(size r)))*)
-//val siftDown: n:nat -> l:heap -> r:heap  -> Tot (o:heap) (decreases ((size l)+(size r)))
-val siftDown: n:nat -> l:heap{is_minHeap l} -> r:heap{is_minHeap r}  -> Tot (o:heap{is_minHeap o}) (decreases ((size l)+(size r)))
+val siftDown: n:nat -> l:heap{is_minHeap l} -> r:heap{is_minHeap r} -> 
+      Tot (o:heap{ is_minHeap o /\ (forall x. in_heap x o ==> (x = n) \/ (in_heap x l) \/ (in_heap x r)) }) 
+        (decreases ((size l)+(size r)))
 let rec siftDown n l r = 
   match l with 
   | Leaf -> Node n Leaf Leaf
@@ -84,32 +81,9 @@ let rec siftDown n l r =
         if n <= m1 && n <= m2 then Node n l r
         else if m1 <= n && m1 <= m2 then (Node m1 (siftDown n m1l m1r) r)
         else (Node m2 l (siftDown n m2l m2r) )
-///////
-val siftDown_lemma: n:nat -> l:heap{is_minHeap l} -> r:heap{is_minHeap r}  -> 
-    Lemma (ensures
-      ((heapVal l = 0) ==> is_minHeap (Node n Leaf Leaf))
-      \/ ( ~(heapVal l = 0) /\ (heapVal r = 0) /\ n  <= (heapVal l)  ==> is_minHeap (Node n l Leaf))
-      \/ ( ~(heapVal l = 0) /\ (heapVal r = 0) /\  n > (heapVal l)  ==> is_minHeap (Node (heapVal l) (Node n Leaf Leaf) Leaf) )
-      \/ (~(heapVal r = 0) /\ ~(heapVal l = 0) /\ (heapVal l) > n /\ (heapVal r) > n ==> is_minHeap (Node n l r))
-      \/ (~(heapVal r = 0) /\ ~(heapVal l = 0) /\ (heapVal l) <= n /\ (heapVal l) <= (heapVal r) ==> is_minHeap (Node (heapVal l) (siftDown n (heapLeft l) (heapRight l)) r) )
-      \/ (~(heapVal r = 0) /\ ~(heapVal l = 0) /\ (heapVal r) < n /\ (heapVal r) < (heapVal l) ==> is_minHeap (Node (heapVal r) l (siftDown n (heapLeft r) (heapRight r) ) ) )
-      ) [SMTPat (siftDown n l r)]
-let rec siftDown_lemma n l r = 
-  match l with 
-  | Leaf -> ()
-  | Node m1 m1l m1r ->
-    match r with
-    | Leaf -> 
-        if n <= m1 then ()
-        else ()
-    | Node m2 m2l m2r -> 
-        if n <= m1 && n <= m2 then (assert(is_minHeap (Node n l r))) 
-        else if m1 <= n && m1 <= m2 then (assert(is_minHeap m1r); assert(is_minHeap m1l); (siftDown_lemma m1 (siftDown n m1l m1r) r) )
-        else (assert(is_minHeap m2r); assert(is_minHeap m2l);  (siftDown_lemma m2 l (siftDown n m2l m2r)) )
 
-(*
-val leftRem: h:heap{is_minHeap h} -> Tot (n:nat * o:heap{is_minHeap o})*)
-val leftRem: h:heap -> Tot (n:nat * o:heap)
+val leftRem: h:heap{is_minHeap h} -> 
+                Tot (n:nat * o:heap{is_minHeap o /\ (forall x. in_heap x o ==> in_heap x h)})
 let rec leftRem h = 
     match h with
         | Leaf -> (0,Leaf) 
@@ -117,9 +91,15 @@ let rec leftRem h =
         | Node m l r -> 
           match (leftRem l) with
           | (m1, l2) -> (m1, Node m r l2)
+val peekMin : h:heap{is_minHeap h} -> Tot (n:nat{ forall m. (in_heap m h ==> n <= m) } )
+let peekMin h =
+  match h with 
+  | Leaf -> 0
+  | Node n _ _ -> n
 
-(*val deleteMin: h:heap{is_minHeap h} -> Tot (o:heap{is_minHeap h})*)
-val deleteMin: h:heap -> Tot (o:heap)
+val deleteMin: h:heap{is_minHeap h} -> 
+                Tot (o:heap{is_minHeap o})
+                (decreases (size h))
 let deleteMin h = 
         match h with
         | Leaf -> Leaf
@@ -127,11 +107,7 @@ let deleteMin h =
           match leftRem l with 
           | (m1, l2) -> siftDown m1 r l2
 
-val peekMin : h:heap{is_minHeap h} -> Tot (n:nat{ forall m. (in_heap m h ==> n <= m) } )
-let peekMin h =
-  match h with 
-  | Leaf -> 0
-  | Node n _ _ -> n
+
 
 val peek : h:heap -> Tot (n:nat)
 let peek h =
@@ -145,13 +121,26 @@ let rec printAndDelete h =
   match h with 
   | Leaf -> ()
   | Node _ _ _ ->
-  let v1 = peek h in
+  let v1 = peekMin h in
   FStar.IO.print_string ("Min " ^ string_of_int(v1) ^ "\n"); 
   match (deleteMin h) with 
   | Leaf -> ()
   | Node x Leaf Leaf ->  FStar.IO.print_string ("Min " ^ string_of_int(x) ^ "\n")
   | Node _ _ _ ->  printAndDelete( (deleteMin h) ) 
 
+(* Doesn't work... Need to show that the heap gets smaller
+val heapsort: h:heap{is_minHeap h} -> Tot (n:(list nat)) (decreases (size h))
+let rec heapsort h =
+  match h with 
+  | Leaf -> []
+  | Node _ _ _ ->
+  let n = peekMin h in
+  let h1 = deleteMin h in
+  match h1 with 
+  | Leaf -> []
+  | Node x Leaf Leaf -> n::x::[]
+  | Node _ _ _ -> n::(heapsort h1)
+*)
 val checking : unit -> ML unit
 let checking () =
   let h1 = insertMinHeap 3 Leaf in
